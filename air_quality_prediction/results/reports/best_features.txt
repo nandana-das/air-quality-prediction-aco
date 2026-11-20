@@ -1,0 +1,15 @@
+ACO Feature Selection Results
+========================================
+
+ 1. PM10_lag2 (policy)
+ 2. PM10 (policy)
+ 3. NO2_avg7 (policy)
+ 4. AQI_lag2 (other)
+ 5. PM2.5_avg3 (policy)
+ 6. PM2.5 (policy)
+ 7. PM2.5_avg7 (policy)
+ 8. PM10_avg3 (policy)
+ 9. PM10_avg7 (policy)
+10. PM2.5_lag1 (policy)
+11. PM10_lag3 (policy)
+12. NO_lag3 (policy)

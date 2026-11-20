@@ -1,58 +1,76 @@
 {
-  "model_comparison": {
-    "aco_dt_single": {
-      "rmse": 21.856461505533584,
-      "mae": 11.452825962107916,
-      "r2": 0.9497138735423025,
-      "custom_accuracy": 92.30681096605167,
-      "features_used": 8
-    },
-    "aco_dt_ensemble": {
-      "rmse": 12.086518762544696,
-      "mae": 5.7917015379205745,
-      "r2": 0.9846223157388668,
-      "custom_accuracy": 96.10954930190596,
-      "features_used": 8
-    },
-    "random_forest": {
-      "rmse": 6.87913520953015,
-      "mae": 1.9511729110552416,
-      "r2": 0.9950185454793135,
-      "custom_accuracy": 98.68934164438272,
-      "features_used": 48
-    }
+  "data": {
+    "source": "XKDR India Air Quality Database (CPCB CAAQM) + Open-Meteo ERA5",
+    "cities": [
+      "Bengaluru",
+      "Chennai",
+      "Delhi",
+      "Hyderabad",
+      "Kolkata",
+      "Mumbai"
+    ],
+    "train": "2018-2022",
+    "validation": "2023",
+    "test": "2024",
+    "target": "next-day CPCB AQI",
+    "n_test_rows": 2190
   },
   "feature_selection": {
-    "total_features": 48,
-    "selected_features": 8,
-    "feature_reduction_percent": 83.33333333333334,
-    "policy_controllable_selected": 8,
+    "total_features": 91,
+    "selected_features": 12,
+    "feature_reduction_percent": 86.8,
+    "policy_controllable_selected": 11,
+    "weather_selected": 0,
     "selected_feature_list": [
-      "PM2.5_lag1",
-      "PM10_concentration",
-      "NO2_concentration",
-      "O3_concentration",
-      "PM2.5_concentration",
-      "CO_concentration",
+      "PM10_lag2",
+      "PM10",
+      "NO2_avg7",
+      "AQI_lag2",
+      "PM2.5_avg3",
+      "PM2.5",
+      "PM2.5_avg7",
       "PM10_avg3",
-      "PM2.5_avg3"
+      "PM10_avg7",
+      "PM2.5_lag1",
+      "PM10_lag3",
+      "NO_lag3"
     ]
   },
-  "performance_difference": {
-    "aco_dt_single": {
-      "rmse_difference": 14.977326296003433,
-      "rmse_difference_percent": 217.72106289253173,
-      "within_5_percent_target": false
+  "test_metrics": [
+    {
+      "model": "ACO + Decision Tree",
+      "n_features": 12,
+      "rmse": 28.023,
+      "mae": 16.473,
+      "r2": 0.867
     },
-    "aco_dt_ensemble": {
-      "rmse_difference": 5.207383553014545,
-      "rmse_difference_percent": 75.69822941988973,
-      "within_5_percent_target": false
+    {
+      "model": "ACO + Bagged Trees",
+      "n_features": 12,
+      "rmse": 25.166,
+      "mae": 14.889,
+      "r2": 0.893
     },
-    "best_aco_model": {
-      "model_type": "Ensemble DT",
-      "best_rmse": 12.086518762544696,
-      "target_achieved": false
+    {
+      "model": "Decision Tree (all features)",
+      "n_features": 91,
+      "rmse": 27.92,
+      "mae": 16.603,
+      "r2": 0.868
+    },
+    {
+      "model": "Random Forest (all features)",
+      "n_features": 91,
+      "rmse": 23.943,
+      "mae": 14.403,
+      "r2": 0.903
+    },
+    {
+      "model": "Persistence (today's AQI)",
+      "n_features": 1,
+      "rmse": 26.713,
+      "mae": 14.899,
+      "r2": 0.879
     }
-  }
+  ]
 }

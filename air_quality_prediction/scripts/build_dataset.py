@@ -94,9 +94,12 @@ def city_daily() -> pd.DataFrame:
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["city", "date"]).reset_index(drop=True)
     # Regular daily grid per city so shift(1) always means "previous day"
-    df = (df.set_index("date").groupby("city", group_keys=False)
-            .apply(lambda g: g.asfreq("D").assign(city=g["city"].iloc[0]))
-            .reset_index())
+    frames = []
+    for c, g in df.groupby("city"):
+        g = g.set_index("date").asfreq("D")
+        g["city"] = c
+        frames.append(g.reset_index())
+    df = pd.concat(frames, ignore_index=True)
 
     pollutants = [p for p in RENAME.values() if p in df.columns]
     g = df.groupby("city")
