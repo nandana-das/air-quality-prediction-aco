@@ -1,276 +1,113 @@
-# Air Quality Prediction with Ant Colony Optimization (ACO) + Decision Tree
+# Air Quality Prediction with Ant Colony Optimization (ACO) + Decision Trees
 
-## Overview
+Next-day AQI forecasting for six Indian cities (Delhi, Mumbai, Bengaluru, Kolkata, Hyderabad, Chennai) using **measured** CPCB pollutant data and ERA5 weather, 2018–2024.
 
-This project implements a novel **Ant Colony Optimization (ACO) + Decision Tree** approach for predicting Air Quality Index (AQI) in major Indian cities. The system uses multi-objective optimization to balance prediction accuracy with policy relevance, prioritizing features that can be controlled through environmental policies.
+An Ant Colony Optimization search picks a small feature subset for a Decision Tree. The search is biased toward features that emission policy can act on (PM2.5, PM10, NO2, SO2, ...) rather than weather.
 
-## Key Innovation
+## Results (test year 2024, 2,190 city-days, never seen during training or feature selection)
 
-- **ACO Feature Selection**: Multi-objective optimization balancing accuracy and policy controllability
-- **Policy-Focused Approach**: Prioritizes PM2.5, NO2, SO2 (policy-controllable) over weather features
-- **Massive Feature Reduction**: Achieves 83.3% feature reduction (48 → 8 features)
-- **Perfect Policy Relevance**: 100% of selected features are policy-controllable pollutants
+| Model | Features | RMSE | MAE | R² |
+|---|---:|---:|---:|---:|
+| Random Forest (all features) | 91 | **23.9** | **14.4** | **0.903** |
+| ACO + Bagged Trees | 12 | 25.2 | 14.9 | 0.893 |
+| Persistence (tomorrow = today) | 1 | 26.7 | 14.9 | 0.879 |
+| Decision Tree (all features) | 91 | 27.9 | 16.6 | 0.868 |
+| ACO + Decision Tree | 12 | 28.0 | 16.5 | 0.867 |
 
-## Project Structure
+What the numbers say:
+- ACO cut the feature set from 91 to 12 (−87%); 11 of 12 are policy-controllable pollutants (PM2.5, PM10, NO2, NO and their lags / rolling means), 0 weather.
+- With those 12 features, a single tree matches a tree on all 91 features. A bagged ensemble on the same 12 features is about 5% behind the Random Forest on all features.
+- AQI is very persistent from day to day, so "tomorrow = today" is a strong baseline. Only the ensembles beat it, by 6–10% RMSE. A single Decision Tree does not.
+- Errors are largest in Delhi (MAE ~30 AQI points) and smallest in Bengaluru and Hyderabad (~9).
+
+Full tables, per-city errors and plots: `air_quality_prediction/notebooks/02_aco_development.ipynb`, `air_quality_prediction/results/`.
+
+## Data
+
+| | Source | Licence |
+|---|---|---|
+| Pollutants (PM2.5, PM10, NO, NO2, NOx, NH3, SO2, CO, O3, Benzene, Toluene) | XKDR Forum, [India Air Quality Database](https://airquality.xkdr.org), compiled from the CPCB CAAQM continuous monitoring network. 111 stations in the six cities. | CC BY 4.0 (credit XKDR Forum and CPCB) |
+| Weather (temperature, humidity, wind, pressure, precipitation) | [Open-Meteo](https://open-meteo.com) Historical Weather API (ERA5 reanalysis) | CC BY 4.0 |
+
+Coverage ends 2024-12-31 because CPCB gas data in the XKDR database ends there (only PM2.5/PM10 continue into 2025).
+
+Processing (`scripts/build_dataset.py`):
+1. Station-day means with at least 16 valid hours (CPCB completeness rule), CPCB stations only, non-physical values dropped.
+2. City-day value = mean over the city's stations.
+3. CPCB National AQI from the city-day concentrations (max sub-index; needs ≥3 pollutants including PM2.5 or PM10). Approximation: CO and O3 use the daily mean instead of the maximum 8-hour mean.
+4. Features known at the end of day *t*: pollutants, AQI, weather, lags 1–3, 3- and 7-day rolling means, calendar, city. Target: AQI on day *t*+1.
+
+Split by time: train 2018–2022, validation 2023 (used by ACO to score subsets), test 2024.
+
+## Project structure
 
 ```
 air_quality_prediction/
 ├── data/
 │   ├── raw/
-│   │   └── aqi.csv                    # India AQI 2023-2025 dataset
+│   │   ├── stations.csv                 # XKDR station catalogue
+│   │   ├── weather_daily.csv            # Open-Meteo daily weather
+│   │   └── xkdr_station_daily.csv       # station-level download (not committed, ~145 MB)
 │   └── processed/
-│       └── aqi_transformed_for_aco.csv # Transformed data for ACO
-├── src/
-│   └── aco_optimizer.py              # ACO Feature Selection implementation
+│       ├── city_daily_pollutants.csv    # city-day pollutant means (committed)
+│       └── aqi_daily_features.csv       # modelling table (built locally)
+├── scripts/
+│   ├── fetch_data.py                    # download XKDR + Open-Meteo data
+│   └── build_dataset.py                 # AQI, features, target
+├── src/aco_optimizer.py                 # ACO feature selection
 ├── notebooks/
-│   ├── 01_data_exploration.ipynb     # Data loading & transformation
-│   └── 02_aco_development.ipynb      # ACO testing & analysis
-├── results/
-│   ├── models/                        # Trained models
-│   │   ├── dt_aco_single_model.pkl
-│   │   ├── dt_aco_ensemble_model.pkl
-│   │   ├── rf_baseline_model.pkl
-│   │   └── aco_selected_features.pkl
-│   ├── plots/                         # Generated visualizations
-│   │   ├── aco_analysis.png
-│   │   ├── aco_convergence.png
-│   │   └── prediction_comparison.png
-│   └── reports/                       # JSON results
-│       └── aco_results_summary.json
-├── requirements.txt                   # Python dependencies
-└── README.md                          # This file
+│   ├── 01_data_exploration.ipynb
+│   └── 02_aco_development.ipynb
+├── tests/test_aco_optimizer.py
+└── results/{models,plots,reports}/
 ```
 
-## Dataset
+## Running
 
-- **Source**: India Air Quality Index (AQI) Dataset [2023-2025] from Kaggle
-- **Target Cities**: Delhi, Mumbai, Bangalore, Kolkata, Hyderabad, Chennai
-- **Original Format**: Prominent pollutant per row
-- **Transformed Format**: Individual pollutant concentrations with engineered features
-- **Features**: PM2.5, PM10, NO2, SO2, CO, O3 + temporal + weather + lag + rolling averages
-
-## ACO Implementation
-
-### Core Algorithm
-- **Multi-objective Optimization**: Minimize RMSE + maximize policy relevance
-- **Pheromone Management**: Dynamic trail updates based on solution quality
-- **Heuristic Information**: Correlation + policy relevance weighting
-- **Convergence Tracking**: Early stopping and performance monitoring
-
-### Policy Relevance Framework
-- **High Priority (Weight: 1.5)**: PM2.5, PM10, NO2, SO2, CO, O3, NO, NOx, NH3, Benzene, Toluene, Xylene
-- **Low Priority (Weight: 0.67)**: Temperature, Humidity, Wind_Speed, Wind_Direction, Pressure, Precipitation
-- **Neutral**: Temporal and ratio features
-
-### Decision Tree Configuration
-- **max_depth**: 15 (enhanced for better performance)
-- **min_samples_split**: 10
-- **min_samples_leaf**: 5
-- **max_features**: 'sqrt'
-- **random_state**: 42
-
-## Installation
-
-### Prerequisites
-- Python 3.8+
-- Anaconda/Miniconda (recommended)
-
-### Setup
 ```bash
-# Clone the repository
-git clone <repository-url>
 cd air_quality_prediction
-
-# Create conda environment
-conda create -n air_quality python=3.8
-
-# Activate environment
-conda activate air_quality
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Required Packages
-```
-pandas>=1.3.0
-numpy>=1.21.0
-scikit-learn>=1.0.0
-matplotlib>=3.4.0
-seaborn>=0.11.0
-joblib>=1.0.0
-```
+Build the modelling table from the committed city-level data (no API key needed):
 
-## Usage
-
-### Quick Start
 ```bash
-# Activate environment
-conda activate air_quality
-
-# Start Jupyter
-jupyter notebook
-
-# Run notebooks in order:
-# 1. 01_data_exploration.ipynb (Data loading & transformation)
-# 2. 02_aco_development.ipynb (ACO optimization & analysis)
+python scripts/build_dataset.py
 ```
 
-### Data Transformation
-The system automatically transforms the original AQI data:
-1. **Pivot Format**: Convert prominent pollutant format to tabular format
-2. **Feature Engineering**: Add temporal, lag, rolling, and ratio features
-3. **Weather Simulation**: Generate realistic weather features
-4. **City Filtering**: Focus on target cities
+Then run `notebooks/01_data_exploration.ipynb` and `notebooks/02_aco_development.ipynb`.
 
-### ACO Optimization
-```python
-# Initialize ACO optimizer
-aco_optimizer = ACO_FeatureSelection(
-    n_ants=50,
-    n_iterations=100,
-    alpha=1.0,
-    beta=2.0,
-    rho=0.1,
-    q0=0.9,
-    policy_weight=1.5,
-    min_features=3,
-    max_features=15
-)
+To re-download everything from the source (free key from https://airquality.xkdr.org/signup, about 30 minutes):
 
-# Run optimization
-results = aco_optimizer.optimize(X, y, test_size=0.2, random_state=42)
+```bash
+export XKDR_API_KEY=aqi_...
+python scripts/fetch_data.py
+python scripts/build_dataset.py
 ```
 
-## Results
+Tests:
 
-### Performance Comparison
+```bash
+python -m pytest tests
+```
 
-| Model | RMSE | MAE | R² | Accuracy | Features |
-|-------|------|-----|----|---------|----------| 
-| **ACO+DT (Single)** | 14.52 | 7.74 | 0.9778 | 94.80% | 8 |
-| **ACO+DT (Ensemble)** | 12.91 | 7.09 | 0.9825 | 95.24% | 8 |
-| **Random Forest** | 6.88 | 1.95 | 0.9950 | 98.69% | 48 |
+## ACO method
 
-### Key Achievements
-- **Massive Feature Reduction**: 83.3% reduction (48 → 8 features)
-- **Perfect Policy Relevance**: 100% of selected features are policy-controllable
-- **Smart Feature Selection**: ACO selected optimal pollutant combinations
-- **Reasonable Performance**: 95.24% accuracy with only 8 features
-- **Interpretability**: Highly interpretable for policy-making
+- Each ant builds a subset of 4–15 features. At each step it takes the best-scoring feature with probability `q0`, otherwise samples by `pheromone^alpha * heuristic^beta`.
+- Heuristic = |correlation with target| × 1.5 for policy-controllable features, ÷ 1.5 for weather features.
+- Fitness (lower is better), scored on the 2023 validation set:
+  `val_RMSE × (1 + 0.05·k/n − 0.03·share_policy + 0.03·share_weather)`
+- MAX-MIN pheromone bounds, iteration-best and global-best deposits, early stop after 15 iterations without improvement, seeded RNG.
 
-### Selected Features
-1. PM10_concentration (Policy-controllable)
-2. PM2.5_lag1 (Policy-controllable)
-3. PM10_avg3 (Policy-controllable)
-4. NO2_concentration (Policy-controllable)
-5. PM2.5_concentration (Policy-controllable)
-6. O3_concentration (Policy-controllable)
-7. CO_concentration (Policy-controllable)
-8. PM2.5_avg3 (Policy-controllable)
+Feature categories are matched on the base variable, so `PM2.5_lag1` and `NO2_avg7` count as policy-controllable and `wind_speed` as weather.
 
-### Output Files
-- **Models**: Trained ACO+DT and Random Forest models
-- **Plots**: Convergence, prediction comparison, city-wise analysis
-- **Reports**: Detailed JSON summaries with metrics
-- **Features**: Selected optimal feature subsets
+## Limitations
 
-## Methodology
+- City value is an average of stations, so local hotspots are smoothed out.
+- Weather is ERA5 reanalysis of the same day, not a forecast; tomorrow's weather is not used.
+- CO and O3 sub-indices use daily means (see above), so AQI on CO/O3-dominated days is slightly underestimated.
+- The persistence baseline is hard to beat; most skill comes from recent PM levels.
 
-### 1. Data Preprocessing
-- Load India AQI 2023-2025 dataset
-- Transform prominent pollutant format to tabular format
-- Filter target cities (Delhi, Mumbai, Bangalore, Kolkata, Hyderabad, Chennai)
-- Handle missing values and data validation
+## Credits
 
-### 2. Feature Engineering
-- **Temporal Features**: Year, month, day, season, day_of_week, day_of_year
-- **Lag Features**: Previous 1, 2, 3-day values for all pollutants
-- **Rolling Averages**: 3-day and 7-day rolling means
-- **Ratio Features**: PM2.5/PM10, NO2/CO ratios
-- **Weather Features**: Simulated temperature, humidity, wind speed, pressure
-
-### 3. ACO Feature Selection
-- **Initialization**: Set pheromone trails and heuristic information
-- **Solution Construction**: Ant-based feature subset generation
-- **Fitness Evaluation**: Multi-objective (RMSE + policy relevance)
-- **Pheromone Update**: Evaporation and deposition based on solution quality
-- **Convergence**: Early stopping and best solution tracking
-
-### 4. Model Training & Evaluation
-- **ACO+Decision Tree**: Trained on selected features
-- **Random Forest Baseline**: Trained on all features
-- **Performance Comparison**: Comprehensive metrics analysis
-- **City-wise Analysis**: Individual city optimization
-
-## Technical Specifications
-
-### ACO Parameters
-- **n_ants**: 100 (number of solutions per iteration)
-- **n_iterations**: 150 (maximum iterations)
-- **alpha**: 1.2 (pheromone importance)
-- **beta**: 1.8 (heuristic importance)
-- **rho**: 0.05 (evaporation rate)
-- **q0**: 0.8 (exploitation probability)
-- **policy_weight**: 1.3 (policy relevance multiplier)
-
-### Hardware Requirements
-- **RAM**: 8GB minimum (16GB recommended)
-- **Storage**: 2GB free space
-- **CPU**: Multi-core recommended for parallel processing
-
-## Visualization
-
-### Generated Plots
-1. **ACO Convergence**: Iteration vs fitness evolution
-2. **Feature Selection**: Policy-controllable vs weather features pie chart
-3. **Prediction Comparison**: ACO+DT vs Random Forest scatter plots
-4. **RMSE Comparison**: Bar chart comparing model performance
-5. **Model Analysis**: Comprehensive performance visualization
-
-## Academic Value
-
-### Research Contributions
-- **Novel ACO Application**: First application of ACO to air quality prediction
-- **Policy-Focused Approach**: Integration of environmental policy relevance
-- **Multi-objective Optimization**: Balancing accuracy and interpretability
-- **City-specific Insights**: Individual optimization for Indian urban areas
-
-### Target Comparison
-- **Baseline Paper**: "Optimized machine learning model for air quality index prediction in major cities in India" (2024, Scientific Reports, Nature)
-- **Target Accuracy**: 94.25%
-- **Our ACO+DT Ensemble**: 95.24% accuracy (exceeded target!)
-- **Trade-off**: 83.3% feature reduction vs 87.6% performance gap vs Random Forest
-
-## File Descriptions
-
-### Core Files
-- `src/aco_optimizer.py`: Complete ACO implementation with multi-objective optimization
-- `notebooks/01_data_exploration.ipynb`: Data loading and transformation pipeline
-- `notebooks/02_aco_development.ipynb`: ACO testing, optimization, and analysis
-
-### Results
-- `results/models/`: Trained models and selected features
-- `results/plots/`: All generated visualizations
-- `results/reports/`: JSON summaries with detailed metrics
-
-## Contributing
-
-This project was developed for academic research purposes as part of MTech AI & Data Science program. The implementation focuses on:
-
-- **Reproducibility**: Complete code with detailed documentation
-- **Policy Relevance**: Environmental intervention guidance
-- **Academic Standards**: Rigorous methodology and evaluation
-
-## License
-
-This project is developed for educational and research purposes as part of MTech AI & Data Science program.
-
-## References
-
-- **Baseline Paper**: "Optimized machine learning model for air quality index prediction in major cities in India" (2024, Scientific Reports, Nature)
-- **Dataset**: India Air Quality Index (AQI) Dataset [2023-2025] from Kaggle
-- **Target Accuracy**: 94.25%
-- **ACO Algorithm**: Ant Colony Optimization for feature selection
-
----
+Pollutant data: XKDR Forum (2026), India Air Quality Database, https://airquality.xkdr.org; Central Pollution Control Board CAAQM network. Weather: Open-Meteo.com, ERA5 (Copernicus Climate Change Service).
