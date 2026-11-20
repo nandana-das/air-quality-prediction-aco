@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+.env
+
+# Large station-level downloads (rebuild with scripts/fetch_data.py)
+air_quality_prediction/data/raw/parts/
+air_quality_prediction/data/raw/xkdr_station_daily.csv
